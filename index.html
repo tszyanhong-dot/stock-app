@@ -41,97 +41,115 @@
   </div>
 
   <script>
-    // ⚠️ 請替換為你喺 Apps Script 複製嘅 Web App URL
-    const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwbhnTddjfjQMmjI_gD1KtxQbzmtjy4zm4TDwyIUxyNxK_tfDVeH0lbFLY6HsOV8IzPFg/exec';
+  // ⚠️ 請記得替換為你喺 Apps Script 複製嘅 Web App URL
+  const GOOGLE_SCRIPT_URL = '填入你的_GOOGLE_APPS_SCRIPT_URL';
 
-    let html5QrcodeScanner;
+  let html5QrCode;
 
-    function startScanner() {
-      if(html5QrcodeScanner) {
-        html5QrcodeScanner.clear();
-      }
-      html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: { width: 250, height: 150 } });
-      html5QrcodeScanner.render((decodedText) => {
-        document.getElementById('janCode').value = decodedText;
-        // 掃碼成功發出嗶聲提示（可選）
-        navigator.vibrate?.(100);
-        html5QrcodeScanner.clear();
-      });
+  function startScanner() {
+    // 如果已經初始化過，先停止
+    if (html5QrCode && html5QrCode.isScanning) {
+      html5QrCode.stop().then(() => initCamera()).catch(err => console.error(err));
+    } else {
+      initCamera();
     }
+  }
 
-    // 圖片預覽與轉 Base64
-    let base64Photo = "";
-    document.getElementById('photoInput').addEventListener('change', function(e) {
-      const file = e.target.files[0];
-      if (file) {
-        const reader = new FileReader();
-        reader.onload = function(event) {
-          // 壓縮相片避免過大
-          const img = new Image();
-          img.src = event.target.result;
-          img.onload = function() {
-            const canvas = document.createElement('canvas');
-            const max_size = 800; // 限制最大寬度/高度 800px 節省空間
-            let width = img.width;
-            let height = img.height;
-            if (width > height) {
-              if (width > max_size) { height *= max_size / width; width = max_size; }
-            } else {
-              if (height > max_size) { width *= max_size / height; height = max_size; }
-            }
-            canvas.width = width;
-            canvas.height = height;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, width, height);
-            base64Photo = canvas.toDataURL('image/jpeg', 0.7);
-            
-            const preview = document.getElementById('preview');
-            preview.src = base64Photo;
-            preview.classList.remove('hidden');
+  function initCamera() {
+    html5QrCode = new Html5Qrcode("reader");
+    
+    // 強制指定使用 iPhone 的後置鏡頭 (environment)
+    const config = { fps: 10, qrbox: { width: 250, height: 150 } };
+    
+    html5QrCode.start(
+      { facingMode: "environment" }, 
+      config,
+      (decodedText) => {
+        // 掃碼成功
+        document.getElementById('janCode').value = decodedText;
+        navigator.vibrate?.(100);
+        html5QrCode.stop(); // 掃完自動暫停鏡頭
+      },
+      (errorMessage) => {
+        // 掃描中，忽略尋找條碼的過程錯誤
+      }
+    ).catch(err => {
+      console.error("相機開啟失敗:", err);
+      alert("無法開啟相機，請確認已允許 Safari 相機權限，或嘗試點擊「重掃」。");
+    });
+  }
+
+  // 圖片預覽與轉 Base64
+  let base64Photo = "";
+  document.getElementById('photoInput').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = function(event) {
+        const img = new Image();
+        img.src = event.target.result;
+        img.onload = function() {
+          const canvas = document.createElement('canvas');
+          const max_size = 800;
+          let width = img.width;
+          let height = img.height;
+          if (width > height) {
+            if (width > max_size) { height *= max_size / width; width = max_size; }
+          } else {
+            if (height > max_size) { width *= max_size / height; height = max_size; }
           }
-        };
-        reader.readAsDataURL(file);
-      }
-    });
-
-    // 表單提交
-    document.getElementById('stockForm').addEventListener('submit', async function(e) {
-      e.preventDefault();
-      const btn = document.getElementById('submitBtn');
-      btn.disabled = true;
-      btn.innerText = '上傳中...';
-
-      const payload = {
-        janCode: document.getElementById('janCode').value,
-        quantity: document.getElementById('quantity').value,
-        photo: base64Photo
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          base64Photo = canvas.toDataURL('image/jpeg', 0.7);
+          
+          const preview = document.getElementById('preview');
+          preview.src = base64Photo;
+          preview.classList.remove('hidden');
+        }
       };
+      reader.readAsDataURL(file);
+    }
+  });
 
-      try {
-        await fetch(GOOGLE_SCRIPT_URL, {
-          method: 'POST',
-          mode: 'no-cors', // 避免跨域阻擋
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
+  // 表單提交
+  document.getElementById('stockForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.innerText = '上傳中...';
 
-        alert('成功記錄！');
-        // 重置表單
-        document.getElementById('janCode').value = '';
-        document.getElementById('quantity').value = '1';
-        document.getElementById('photoInput').value = '';
-        document.getElementById('preview').classList.add('hidden');
-        base64Photo = "";
-        startScanner(); // 自動重新開啟掃碼器
-      } catch (err) {
-        alert('儲存失敗：' + err.message);
-      } finally {
-        btn.disabled = false;
-        btn.innerText = '儲存並記錄去 Sheets';
-      }
-    });
+    const payload = {
+      janCode: document.getElementById('janCode').value,
+      quantity: document.getElementById('quantity').value,
+      photo: base64Photo
+    };
 
-    window.onload = startScanner;
-  </script>
+    try {
+      await fetch(GOOGLE_SCRIPT_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      alert('成功記錄！');
+      document.getElementById('janCode').value = '';
+      document.getElementById('quantity').value = '1';
+      document.getElementById('photoInput').value = '';
+      document.getElementById('preview').classList.add('hidden');
+      base64Photo = "";
+      startScanner(); // 重新開啟掃描器
+    } catch (err) {
+      alert('儲存失敗：' + err.message);
+    } finally {
+      btn.disabled = false;
+      btn.innerText = '儲存並記錄去 Sheets';
+    }
+  });
+
+  window.onload = startScanner;
+</script>
 </body>
 </html>
